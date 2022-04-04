@@ -1,10 +1,14 @@
 ﻿#include <arm_neon.h>
 #include<assert.h>
 #include <stdio.h>
-#include <time.h>
+#include <iostream>
+#include<sys/time.h>
 #include<cmath>
+#define INTERVAL 5000
+using namespace std;
+typedef long long ll;
 const int dim = 128;
-const int trainNum = 1028;
+const int trainNum = 1024;
 const int testNum = 128;
 float train[trainNum][dim];
 float test[testNum][dim];
@@ -87,14 +91,18 @@ void sqrt_unwrapped()
 
 void timing(void (*func)())
 {
-	struct timespec sts, ets;
-	timespec_get(&sts, TIME_UTC);
-	func();
-	timespec_get(&ets, TIME_UTC);
-	time_t dsec = ets.tv_sec-sts.tv_sec;
-	long dnsec = ets.tv_nsec-sts.tv_nsec;
-	double time_in_ms = dsec * 1000.0 + dnsec / 1000000.0;
-	printf("%fms\n", time_in_ms);
+    timeval tv_begin, tv_end;
+    int counter(0);
+    double time = 0;
+    gettimeofday(&tv_begin, 0);
+    while(INTERVAL>time)
+    {
+        func();
+        gettimeofday(&tv_end, 0);
+        counter++;
+        time = ((ll)tv_end.tv_sec - (ll)tv_begin.tv_sec)*1000.0 + ((ll)tv_end.tv_usec - (ll)tv_begin.tv_usec)/1000.0;
+    }
+    cout<<time/counter<<","<<counter<<'\t';
 }
 
 void init()
@@ -111,10 +119,6 @@ int main()
 {
 	float distComp[testNum][trainNum];
 	init();
-	printf("%s%x\n", "train首地址", (unsigned int)train);
-	printf("%s%x\n", "test首地址", (unsigned int)test);
-	printf("%s%x\n", "dist首地址", (unsigned int)dist);
-	printf("%s%x\n", "distComp首地址", (unsigned int)distComp);
 	printf("%s", "朴素算法耗时：");
 	timing(plain);
 	float error = 0;
