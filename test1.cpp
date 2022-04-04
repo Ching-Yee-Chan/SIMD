@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <time.h>
 #include<cmath>
-const int dim = 32;
+const int dim = 128;
 const int trainNum = 1028;
 const int testNum = 128;
 float train[trainNum][dim];
@@ -53,6 +53,37 @@ void one_cycle_unwrapped()
 	}
 }
 
+void sqrt_unwrapped()
+{
+	for (int i = 0;i < testNum;i++)
+	{
+		for (int j = 0;j < trainNum;j++)
+		{
+			assert(dim % 4 == 0);//首先假定维度为4的倍数
+			float32x4_t sum = vmovq_n_f32(0);
+			for (int k = 0;k < dim;k += 4)
+			{
+				float32x4_t temp_test = vld1q_f32(&test[i][k]);
+				float32x4_t temp_train = vld1q_f32(&train[j][k]);
+				temp_test = vsubq_f32(temp_test, temp_train);
+				//temp_test = vmulq_f32(temp_test, temp_test);
+				//sum = vaddq_f32(sum, temp_test);
+				sum = vmlaq_f32(sum, temp_test, temp_test);
+			}
+			float32x2_t sumlow = vget_low_f32(sum);
+			float32x2_t sumhigh = vget_high_f32(sum);
+			sumlow = vpadd_f32(sumlow, sumhigh);
+			float32_t sumlh = vpadds_f32(sumlow);
+			dist[i][j] = (float)sumlh;
+		}
+		for (int j = 0;j < trainNum;j += 4)
+		{
+			float32x4_t temp_dist = vld1q_f32(&dist[i][j]);
+			temp_dist = vsqrtq_f32(temp_dist);
+			vst1q_f32(&dist[i][j], temp_dist);
+		}
+	}
+}
 
 void timing(void (*func)())
 {
@@ -80,6 +111,10 @@ int main()
 {
 	float distComp[testNum][trainNum];
 	init();
+	printf("%s%x\n", "train首地址", (unsigned int)train);
+	printf("%s%x\n", "test首地址", (unsigned int)test);
+	printf("%s%x\n", "dist首地址", (unsigned int)dist);
+	printf("%s%x\n", "distComp首地址", (unsigned int)distComp);
 	printf("%s", "朴素算法耗时：");
 	timing(plain);
 	float error = 0;
@@ -88,6 +123,13 @@ int main()
 			distComp[i][j] = dist[i][j];
 	printf("%s", "SIMD算法耗时：");
 	timing(one_cycle_unwrapped);
+	for (int i = 0;i < testNum;i++)
+		for (int j = 0;j < trainNum;j++)
+			error += (distComp[i][j] - dist[i][j]) * (distComp[i][j] - dist[i][j]);
+	printf("误差%f\n", error);
+	error = 0;
+	printf("%s", "开方SIMD算法耗时：");
+	timing(sqrt_unwrapped);
 	for (int i = 0;i < testNum;i++)
 		for (int j = 0;j < trainNum;j++)
 			error += (distComp[i][j] - dist[i][j]) * (distComp[i][j] - dist[i][j]);
