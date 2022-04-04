@@ -4,6 +4,7 @@
 #include <tmmintrin.h> //SSSE3
 #include <smmintrin.h> //SSE4.1
 #include <nmmintrin.h> //SSSE4.2
+#include <immintrin.h> //AVX、AVX2
 #include<assert.h>
 #include<windows.h>
 #include <stdio.h>
@@ -13,7 +14,7 @@
 #define INTERVAL 1000
 typedef long long ll;
 const int dim = 128;
-const int trainNum = 1028;
+const int trainNum = 1024;
 const int testNum = 128;
 float train[trainNum][dim];
 float test[testNum][dim];
@@ -36,59 +37,38 @@ void plain()
 	}
 }
 
-void one_cycle_unwrapped()
-{
-	for (int i = 0;i < testNum;i++)
-	{
-		for (int j = 0;j < trainNum;j++)
-		{
-			assert(dim % 4 == 0);//首先假定维度为4的倍数
-			__m128 sum = _mm_setzero_ps();
-			for (int k = 0;k < dim;k += 4)
-			{
-				__m128 temp_test = _mm_load_ps(&test[i][k]);
-				__m128 temp_train = _mm_load_ps(&train[j][k]);
-				temp_test = _mm_sub_ps(temp_test, temp_train);
-				temp_test = _mm_mul_ps(temp_test, temp_test);
-				sum = _mm_add_ps(sum, temp_test);
-			}
-			sum = _mm_hadd_ps(sum, sum);
-			sum = _mm_hadd_ps(sum, sum);
-			sum = _mm_sqrt_ss(sum);
-			_mm_store_ss(dist[i] + j, sum);
-		}
-	}
-}
-
 void sqrt_unwrapped()
 {
 	for (int i = 0;i < testNum;i++)
 	{
 		for (int j = 0;j < trainNum;j++)
 		{
-			assert(dim % 4 == 0);//首先假定维度为4的倍数
-			__m128 sum = _mm_setzero_ps();
-			for (int k = 0;k < dim;k += 4)
+			assert(dim % 8 == 0);//首先假定维度为8的倍数
+			__m256 sum = _mm256_setzero_ps();
+			for (int k = 0;k < dim;k += 8)
 			{
-				__m128 temp_test = _mm_load_ps(&test[i][k]);
-				__m128 temp_train = _mm_load_ps(&train[j][k]);
-				temp_test = _mm_sub_ps(temp_test, temp_train);
-				temp_test = _mm_mul_ps(temp_test, temp_test);
-				sum = _mm_add_ps(sum, temp_test);
+				__m256 temp_test = _mm256_load_ps(&test[i][k]);
+				__m256 temp_train = _mm256_load_ps(&train[j][k]);
+				temp_test = _mm256_sub_ps(temp_test, temp_train);
+				temp_test = _mm256_mul_ps(temp_test, temp_test);
+				sum = _mm256_add_ps(sum, temp_test);
 			}
-			sum = _mm_hadd_ps(sum, sum);
-			sum = _mm_hadd_ps(sum, sum);
-			_mm_store_ss(dist[i] + j, sum);
+			__m256 hi = _mm256_permute2f128_ps(sum, sum, 1);
+			sum = _mm256_add_ps(sum, hi);
+			sum = _mm256_hadd_ps(sum, sum);
+			sum = _mm256_hadd_ps(sum, sum);
+			float tempArray[8];
+			_mm256_store_ps(tempArray, sum);
+			dist[i][j] = tempArray[0];
 		}
-		for (int j = 0;j < trainNum;j += 4)
+		for (int j = 0;j < trainNum;j += 8)
 		{
-			__m128 temp_dist = _mm_load_ps(&dist[i][j]);
-			temp_dist = _mm_sqrt_ps(temp_dist);
-			_mm_store_ps(&dist[i][j], temp_dist);
+			__m256 temp_dist = _mm256_load_ps(&dist[i][j]);
+			temp_dist = _mm256_sqrt_ps(temp_dist);
+			_mm256_store_ps(&dist[i][j], temp_dist);
 		}
 	}
 }
-
 
 void timing(void (*func)())
 {
@@ -121,23 +101,22 @@ int main()
 {
 	float distComp[testNum][trainNum];
 	init();
+    printf("%s%p\n", "train首地址", train);
+	printf("%s%p\n", "test首地址", test);
+	printf("%s%p\n", "dist首地址", dist);
+	printf("%s%p\n", "distComp首地址", distComp);
 	printf("%s", "朴素算法耗时：");
 	timing(plain);
 	float error = 0;
 	for (int i = 0;i < testNum;i++)
 		for (int j = 0;j < trainNum;j++)
 			distComp[i][j] = dist[i][j];
-	printf("%s", "SIMD算法耗时：");
-	timing(one_cycle_unwrapped);
-	for (int i = 0;i < testNum;i++)
-		for (int j = 0;j < trainNum;j++)
-			error += (distComp[i][j] - dist[i][j]) * (distComp[i][j] - dist[i][j]);
-	printf("误差%f\n", error);
-	error = 0;
-	printf("%s", "开方SIMD算法耗时：");
+	printf("%s", "AVX算法耗时：");
 	timing(sqrt_unwrapped);
 	for (int i = 0;i < testNum;i++)
 		for (int j = 0;j < trainNum;j++)
 			error += (distComp[i][j] - dist[i][j]) * (distComp[i][j] - dist[i][j]);
 	printf("误差%f", error);
+	system("pause");
+	return 0;
 }

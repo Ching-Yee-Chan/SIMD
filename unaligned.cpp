@@ -1,10 +1,10 @@
-#include <xmmintrin.h> //SSE
+ï»¿#include <xmmintrin.h> //SSE
 #include <emmintrin.h> //SSE2
 #include <pmmintrin.h> //SSE3
 #include <tmmintrin.h> //SSSE3
 #include <smmintrin.h> //SSE4.1
 #include <nmmintrin.h> //SSSE4.2
-#include <immintrin.h> //AVX¡¢AVX2
+#define INTERVAL 1000
 #include<assert.h>
 #include<windows.h>
 #include <stdio.h>
@@ -15,9 +15,9 @@ typedef long long ll;
 const int dim = 128;
 const int trainNum = 1028;
 const int testNum = 128;
-float train[trainNum+1][dim+1];
-float test[testNum+1][dim+1];
-float dist[testNum+1][trainNum+1];
+float test[testNum + 1][dim + 1];
+float train[trainNum + 1][dim + 1];
+float dist[testNum + 1][trainNum + 1];
 void plain()
 {
 	for (int i = 1;i <= testNum;i++)
@@ -42,7 +42,7 @@ void sqrt_unwrapped()
 	{
 		for (int j = 1;j <= trainNum;j++)
 		{
-			assert(dim % 4 == 0);//Ê×ÏÈ¼Ù¶¨Î¬¶ÈÎª4µÄ±¶Êý
+			assert(dim % 4 == 0);//é¦–å…ˆå‡å®šç»´åº¦ä¸º4çš„å€æ•°
 			__m128 sum = _mm_setzero_ps();
 			for (int k = 1;k <= dim;k += 4)
 			{
@@ -71,20 +71,20 @@ void aligned()
 	{
 		for (int j = 1;j <= trainNum;j++)
 		{
-			assert(dim % 4 == 0);//Ê×ÏÈ¼Ù¶¨Î¬¶ÈÎª4µÄ±¶Êý
+			assert(dim % 4 == 0);//é¦–å…ˆå‡å®šç»´åº¦ä¸º4çš„å€æ•°
 			__m128 sum = _mm_setzero_ps();
 			float serial_sum = 0;
-			for(int k = 1;k <= 3;k++)//´¦Àí1-3£¨Í·²¿£©
-            {
-                float temp = test[i][k] - train[j][k];
+			for (int k = 1;k <= 3;k++)//å¤„ç†1-3ï¼ˆå¤´éƒ¨ï¼‰
+			{
+				float temp = test[i][k] - train[j][k];
 				temp *= temp;
 				serial_sum += temp;
-            }
-            //´¦Àídim£¨Î²²¿£©
-            float temp = test[i][dim] - train[j][dim];
-            temp *= temp;
-            serial_sum += temp;
-			for (int k = 4;k < dim;k += 4)//4~dim-1ÊÇ¶ÔÆëµÄ
+			}
+			//å¤„ç†dimï¼ˆå°¾éƒ¨ï¼‰
+			float temp = test[i][dim] - train[j][dim];
+			temp *= temp;
+			serial_sum += temp;
+			for (int k = 4;k < dim;k += 4)//4~dim-1æ˜¯å¯¹é½çš„
 			{
 				__m128 temp_test = _mm_load_ps(&test[i][k]);
 				__m128 temp_train = _mm_load_ps(&train[j][k]);
@@ -95,11 +95,11 @@ void aligned()
 			sum = _mm_hadd_ps(sum, sum);
 			sum = _mm_hadd_ps(sum, sum);
 			_mm_store_ss(dist[i] + j, sum);
-			dist[i][j] += serial_sum;//´®ÐÐÓë²¢ÐÐ½á¹ûºÏ²¢
+			dist[i][j] += serial_sum;//ä¸²è¡Œä¸Žå¹¶è¡Œç»“æžœåˆå¹¶
 		}
-        for(int j = 1;j<=3;j++)//´¦Àí1-3£¨Í·²¿£©
-            dist[i][j] = sqrtf(dist[i][j]);
-        dist[i][trainNum] = sqrtf(dist[i][trainNum]);//´¦ÀítrainNum£¨Î²²¿£©
+		for (int j = 1;j <= 3;j++)//å¤„ç†1-3ï¼ˆå¤´éƒ¨ï¼‰
+			dist[i][j] = sqrtf(dist[i][j]);
+		dist[i][trainNum] = sqrtf(dist[i][trainNum]);//å¤„ç†trainNumï¼ˆå°¾éƒ¨ï¼‰
 		for (int j = 4;j < trainNum;j += 4)
 		{
 			__m128 temp_dist = _mm_load_ps(&dist[i][j]);
@@ -108,53 +108,61 @@ void aligned()
 		}
 	}
 }
+
 void timing(void (*func)())
 {
 	ll head, tail, freq;
+	double time = 0;
+	int counter = 0;
 	QueryPerformanceFrequency((LARGE_INTEGER*)&freq);
 	QueryPerformanceCounter((LARGE_INTEGER*)&head);
-	func();
-	QueryPerformanceCounter((LARGE_INTEGER*)&tail);
-	std::cout << (tail - head) * 1000.0 / freq << '\n';
+	while (INTERVAL > time)
+	{
+		func();
+		QueryPerformanceCounter((LARGE_INTEGER*)&tail);
+		counter++;
+		time = (tail - head) * 1000.0 / freq;
+	}
+	std::cout << time / counter << '\n';
 }
 
 void init()
 {
 	for (int i = 0;i <= testNum;i++)
 		for (int k = 0;k <= dim;k++)
-			test[i][k] = rand() / double(RAND_MAX) * 1000;//0-100¼äËæ»ú¸¡µãÊý
+			test[i][k] = rand() / double(RAND_MAX) * 1000;//0-100é—´éšæœºæµ®ç‚¹æ•°
 	for (int i = 0;i <= trainNum;i++)
 		for (int k = 0;k <= dim;k++)
-			train[i][k] = rand() / double(RAND_MAX) * 1000;//0-100¼äËæ»ú¸¡µãÊý
+			train[i][k] = rand() / double(RAND_MAX) * 1000;//0-100é—´éšæœºæµ®ç‚¹æ•°
 }
 
 int main()
 {
-	float distComp[testNum+1][trainNum+1];
+	float distComp[testNum + 1][trainNum + 1];
 	init();
-	printf("%s%p\n", "trainÊ×µØÖ·", train);
-	printf("%s%p\n", "testÊ×µØÖ·", test);
-	printf("%s%p\n", "distÊ×µØÖ·", dist);
-	printf("%s%p\n", "distCompÊ×µØÖ·", distComp);
-	printf("%s", "ÆÓËØËã·¨ºÄÊ±£º");
+	printf("%s%p\n", "trainé¦–åœ°å€", train);
+	printf("%s%p\n", "testé¦–åœ°å€", test);
+	printf("%s%p\n", "disté¦–åœ°å€", dist);
+	printf("%s%p\n", "distCompé¦–åœ°å€", distComp);
+	printf("%s", "æœ´ç´ ç®—æ³•è€—æ—¶ï¼š");
 	timing(plain);
 	float error = 0;
 	for (int i = 1;i <= testNum;i++)
 		for (int j = 1;j <= trainNum;j++)
 			distComp[i][j] = dist[i][j];
-	printf("%s", "²»¶ÔÆëSIMDËã·¨ºÄÊ±£º");
+	printf("%s", "ä¸å¯¹é½SIMDç®—æ³•è€—æ—¶ï¼š");
 	timing(sqrt_unwrapped);
 	for (int i = 1;i <= testNum;i++)
 		for (int j = 1;j <= trainNum;j++)
 			error += (distComp[i][j] - dist[i][j]) * (distComp[i][j] - dist[i][j]);
-	printf("Îó²î%f\n", error);
+	printf("è¯¯å·®%f\n", error);
 	error = 0;
-	printf("%s", "¶ÔÆëSIMDËã·¨ºÄÊ±£º");
+	printf("%s", "å¯¹é½SIMDç®—æ³•è€—æ—¶ï¼š");
 	timing(sqrt_unwrapped);
 	for (int i = 1;i <= testNum;i++)
 		for (int j = 1;j <= trainNum;j++)
 			error += (distComp[i][j] - dist[i][j]) * (distComp[i][j] - dist[i][j]);
-	printf("Îó²î%f\n", error);
+	printf("è¯¯å·®%f\n", error);
 	system("pause");
 	return 0;
 }
