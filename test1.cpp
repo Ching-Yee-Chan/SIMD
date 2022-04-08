@@ -1,10 +1,10 @@
 ﻿#include <arm_neon.h>
 #include<assert.h>
 #include <stdio.h>
-#include <iostream>
-#include<sys/time.h>
+#include <sys/time.h>
 #include<cmath>
-#define INTERVAL 5000
+#include <iostream>
+#define INTERVAL 1000
 using namespace std;
 typedef long long ll;
 const int dim = 128;
@@ -89,6 +89,100 @@ void sqrt_unwrapped()
 	}
 }
 
+void square_unwrapped()
+{
+	float temp_test[testNum];
+	float temp_train[trainNum];
+	for (int i = 0;i < testNum;i++)
+	{
+		float sum = 0.0;
+		for (int j = 0;j < dim;j++)
+			sum += test[i][j] * test[i][j];
+		temp_test[i] = sum;
+	}
+	for (int i = 0;i < trainNum;i++)
+	{
+		float sum = 0.0;
+		for (int j = 0;j < dim;j++)
+			sum += train[i][j] * train[i][j];
+		temp_train[i] = sum;
+	}
+	for(int i = 0;i < testNum;i++)
+		for (int j = 0;j < trainNum;j++)
+		{
+			float sum = 0;
+			for (int k = 0;k < dim;k++)
+				sum += test[i][k] * train[j][k];
+			dist[i][j] = sqrtf(temp_test[i] + temp_train[j] - 2 * sum);
+		}
+}
+
+void square_unwrapped_NEON()
+{
+	float temp_test[testNum];
+	float temp_train[trainNum];
+	assert(dim % 4 == 0);//假定维数为4的倍数
+	for (int i = 0;i < testNum;i++)
+	{
+		float32x4_t sum = vmovq_n_f32(0);
+		for (int j = 0;j < dim;j += 4)
+		{
+			float32x4_t square = vld1q_f32(&test[i][j]);
+			sum = vmlaq_f32(sum, square, square);
+		}
+		float32x2_t sumlow = vget_low_f32(sum);
+		float32x2_t sumhigh = vget_high_f32(sum);
+		sumlow = vpadd_f32(sumlow, sumhigh);
+		float32_t sumlh = vpadds_f32(sumlow);
+		temp_test[i] = (float)sumlh;
+	}
+	for (int i = 0;i < trainNum;i++)
+	{
+		float32x4_t sum = vmovq_n_f32(0);
+		for (int j = 0;j < dim;j += 4)
+		{
+			float32x4_t square = vld1q_f32(&train[i][j]);
+			sum = vmlaq_f32(sum, square, square);
+		}
+		float32x2_t sumlow = vget_low_f32(sum);
+		float32x2_t sumhigh = vget_high_f32(sum);
+		sumlow = vpadd_f32(sumlow, sumhigh);
+		float32_t sumlh = vpadds_f32(sumlow);
+		temp_train[i] = (float)sumlh;
+	}
+	for (int i = 0;i < testNum;i++)
+	{
+		for (int j = 0;j < trainNum;j++)
+		{
+			float32x4_t sum = vmovq_n_f32(0);
+			for (int k = 0;k < dim;k += 4)
+			{
+				float32x4_t _train = vld1q_f32(&train[j][k]);
+				float32x4_t _test = vld1q_f32(&test[i][k]);
+				_train = vmulq_f32(_train, _test);
+				sum = vaddq_f32(_train, sum);
+			}
+			float32x2_t sumlow = vget_low_f32(sum);
+			float32x2_t sumhigh = vget_high_f32(sum);
+			sumlow = vpadd_f32(sumlow, sumhigh);
+			float32_t sumlh = vpadds_f32(sumlow);
+			dist[i][j] = (float)sumlh;
+		}
+		//dist[i][j] = sqrtf(temp_test[i] + temp_train[j] - 2 * sum);
+		float32x4_t _test = vld1q_dup_f32(&temp_test[i]);
+		for (int j = 0;j < trainNum;j += 4)
+		{
+			float32x4_t _train = vld1q_f32(&temp_train[j]);
+			float32x4_t res = vld1q_f32(&dist[i][j]);
+			res = vmulq_n_f32(res, -2);
+			res = vaddq_f32(_train, res);
+			res = vaddq_f32(_test, res);
+			res = vsqrtq_f32(res);
+			vst1q_f32(&dist[i][j], res);
+		}
+	}
+}
+
 void timing(void (*func)())
 {
     timeval tv_begin, tv_end;
@@ -110,8 +204,8 @@ void init()
 	for (int i = 0;i < testNum;i++)
 		for (int k = 0;k < dim;k++)
 			test[i][k] = rand() / double(RAND_MAX) * 1000;//0-100间随机浮点数
-	for(int i = 0;i<trainNum;i++)
-		for(int k = 0;k<dim;k++)
+	for (int i = 0;i < trainNum;i++)
+		for (int k = 0;k < dim;k++)
 			train[i][k] = rand() / double(RAND_MAX) * 1000;//0-100间随机浮点数
 }
 
@@ -137,5 +231,14 @@ int main()
 	for (int i = 0;i < testNum;i++)
 		for (int j = 0;j < trainNum;j++)
 			error += (distComp[i][j] - dist[i][j]) * (distComp[i][j] - dist[i][j]);
-	printf("误差%f", error);
+	printf("误差%f\n", error);
+	printf("%s", "串行平方展开算法耗时：");
+	timing(square_unwrapped);
+	error = 0;
+	printf("%s", "SIMD平方展开算法耗时：");
+	timing(square_unwrapped_NEON);
+	for (int i = 0;i < testNum;i++)
+		for (int j = 0;j < trainNum;j++)
+			error += (distComp[i][j] - dist[i][j]) * (distComp[i][j] - dist[i][j]);
+	printf("误差%f\n", error);
 }
